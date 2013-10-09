@@ -1,0 +1,28 @@
+// initialize
+loaddll "TKInfo.dll";
+if (!dllfunc("IsTuruKame")) endmacro;
+//if (dllfunc("IsTuruKameMain") || dllfunc("IsTuruKameGrep")) endmacro;
+if (dllfunc("IsTuruKameMain") || dllfunc("IsTuruKameGrep")) {
+  #nSelected = dllfunc("LockSelection");
+  if (#nSelected == 0) endmacro;
+  while (1) {
+    #h = dllfunc("EnumSelection", 1);
+    if (#h == 0) break;
+    if (#h == -1) continue;
+    #n = dllfunc("BeginEditMail");
+    call RemoveMeiwaku;
+    #n = dllfunc("SaveEditMail", 0);
+  }
+  #n = dllfunc("UnlockSelection", 1);
+} else {
+  if (readonly) #n = dllfunc("EnableEdit");
+  call RemoveMeiwaku;
+}
+endmacro;
+
+RemoveMeiwaku:
+  $subject = dllfuncstr("CurrentHeader", "Subject");
+  if ($subject != "" && leftstr($subject, 9) == "[MEIWAKU]") {
+    $s = dllfuncstr("SetHeader", "Subject", midstr($subject, 9, strlen($subject)-9));
+  }
+return;

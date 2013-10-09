@@ -1,0 +1,5 @@
+if (readonly || browsemode) { beep; endmacroall; }
+openreg "CURRENTUSER", "Software\\Hidemaruo\\Hidemaru\\Env";
+writeregnum "eRegexpP", 1;
+execmacro "eQueryReplaceCore.mac";
+closereg;

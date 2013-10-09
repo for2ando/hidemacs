@@ -1,0 +1,59 @@
+#backward = getregnum("eBackwardP");
+#failure = 0;
+#wrapped = 0;
+$$previous = searchbuffer;
+##opt = 0x00;
+setsearch "", ##opt;
+restart:
+while (1) {
+	call settitle;
+	##cc = inputchar($title);
+	if (##cc == 0x0d) break;
+	if (##cc >= 0x20 && ##cc < 0x7f || ##cc == 0x09) {
+		setsearch searchbuffer+char(##cc),##opt;
+		if (#backward) { right; right; findup; }
+		else 		   { left; left; finddown; }
+		#failure = !result;
+	} else if (##cc == 0x13) { //C-s
+		if (searchbuffer == "")
+			if (!#backward) setsearch $$previous,##opt;
+			else { #backward = 0; goto restart; }
+		else if (#failure && (!#backward)) {
+			gofiletop;
+			#wrapped = 1;
+		}
+		//if (#backward) #wrapped = 0;		// non-standard hack
+		#backward = 0;
+		finddown;
+		#failure = !result;
+	} else if (##cc == 0x12) { //C-r
+		if (searchbuffer == "")
+			if (#backward) setsearch $$previous,##opt;
+			else { #backward = 1; goto restart; }
+		else if (#failure && #backward) {
+			gofileend;
+			#wrapped = 1;
+		}
+		//if (!#backward) #wrapped = 0;		// non-standard hack
+		#backward = 1;
+		findup;
+		#failure = !result;
+	} else if (##cc == 0x08) { //C-h, BS
+		// not implemented yet
+	} else {
+		//insert char(##cc);
+		break;
+	}
+}
+endmacro
+
+settitle:
+	$title = "";
+	if (#failure) $title = $title+"Failing ";
+	if (#wrapped)
+		if ($title == "") $title = $title+"Wrapped ";
+		else			  $title = $title+"wrapped ";
+	$title = $title+"I-search";
+	if (#backward) $title = $title+" backward";
+	$title = $title+": "+searchbuffer;
+	return;

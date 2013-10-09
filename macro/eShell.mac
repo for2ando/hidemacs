@@ -1,0 +1,2 @@
+runsync2 "c:\\winap\\4DOS\\4DOS.COM c:\\winap\\4dos @e:\\home\\etc\\4dos.ini /k call e:\\\\home\\\\etc\\\\4dosrc";
+//runsync2 "command.com";

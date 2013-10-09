@@ -1,0 +1,9 @@
+if (readonly || browsemode) { beep; endmacroall; }
+openreg "CURRENTUSER", "Software\\Hidemaruo\\Hidemaru\\Env";
+##lineno = lineno; ##column = column;
+movetolineno 1+getregnum("eMarkX"), getregnum("eMarkY");
+beginsel;
+movetolineno 1+##column, ##lineno;
+tolower;
+escape;
+closereg;

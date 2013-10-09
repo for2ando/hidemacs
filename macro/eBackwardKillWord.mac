@@ -1,0 +1,31 @@
+if (readonly || browsemode) { beep; endmacroall; }
+openreg "CURRENTUSER", "Software\\Hidemaruo\\Hidemaru\\Env";
+if (getregnum("eKillPosY") == lineno && getregnum("eKillPosX") == column)
+	##append = true;
+else
+	##append = false;
+// body begins
+beginsel;
+wordleft;
+if (##append) call appendcutback; else cut;
+// record position for deciding ether appending or overwriting on next call
+writeregnum "eKillPosY", lineno;
+writeregnum "eKillPosX", column;
+closereg
+endmacro
+
+appendcutback:
+	beginclipboardread;
+	##i = 0;
+	while (1) {
+		$$clip[##i] = getclipboard;
+		if ($$clip[##i] == "") break;
+		##i = ##i+1;
+	}
+	cut;
+	##i = 0;
+	while ($$clip[##i] != "") {
+		addclipboard $$clip[##i];
+		##i = ##i+1;
+	}
+	return;

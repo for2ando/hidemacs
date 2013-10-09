@@ -1,0 +1,2 @@
+loaddll "TKInfo.dll";
+#n = dllfunc("TransmitAll");

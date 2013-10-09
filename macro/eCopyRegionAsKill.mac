@@ -1,0 +1,13 @@
+openreg "CURRENTUSER", "Software\\Hidemaruo\\Hidemaru\\Env";
+if (getregnum("eKillPosY") == lineno && getregnum("eKillPosX") == column)
+	##append = true;
+else
+	##append = false;
+// body begins
+beginsel;
+movetolineno 1+getregnum("eMarkX"), getregnum("eMarkY");
+if (##append) appendcopy; else copy;
+// record position for deciding ether appending or overwriting on next call
+writeregnum "eKillPosY", lineno;
+writeregnum "eKillPosX", column;
+closereg

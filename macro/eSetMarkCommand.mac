@@ -1,0 +1,4 @@
+openreg "CURRENTUSER", "Software\\Hidemaruo\\Hidemaru\\Env";
+writeregnum "eMarkY", lineno;
+writeregnum "eMarkX", column;
+closereg

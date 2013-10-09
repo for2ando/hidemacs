@@ -1,0 +1,7 @@
+openreg "CURRENTUSER", "Software\\Hidemaruo\\Hidemaru\\Env";
+##pointY = lineno;
+##pointX = column;
+movetolineno 1+getregnum("eMarkX"), getregnum("eMarkY");
+writeregnum "eMarkY", ##pointY;
+writeregnum "eMarkX", ##pointX;
+closereg

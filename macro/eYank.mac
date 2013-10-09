@@ -1,0 +1,9 @@
+if (readonly || browsemode) { beep; endmacroall; }
+if (!anyclipboard) { endmacro; }
+openreg "CURRENTUSER", "Software\\Hidemaruo\\Hidemaru\\Env";
+writeregnum "eMarkY", lineno;
+writeregnum "eMarkX", column;
+paste
+writeregnum "eKillPosY", -1;
+writeregnum "eKillPosX", -1;
+closereg

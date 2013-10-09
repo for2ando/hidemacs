@@ -1,0 +1,60 @@
+##regp = getregnum("eRegexpP");
+$$search = input("Query replace: ", searchbuffer);
+$$replace = input("Query replace "+$$search+" with: ", $$search);
+$$title = "Query replacing "+$$search+" with "+$$replace+": (? for help)";
+if (##regp) searchdown $$search, casesense, regular;
+else		searchdown $$search;
+while (1) {
+	##cc = inputchar($$title);
+	$$cc = char(##cc);
+	if (##cc == 0x0d || $$cc == "q") break;
+	if ($$cc == " " || $$cc == "y") {
+		if (##regp) replacedown $$search, $$replace, casesense, regular;
+		else		replacedown $$search, $$replace;
+		if (!result) break;
+		if (##regp) searchdown $$search, casesense, regular;
+		else		searchdown $$search;
+		if (!result) break;
+	} else if (##cc == 0x08 || $$cc == "n") {
+		finddown;
+		if (!result) break;
+	} else if ($$cc == "!") {
+		disabledraw;
+		beginsel;
+		gofileend;
+		if (##regp)
+			replaceallfast $$search, $$replace, inselect, casesense, regular;
+		else
+			replaceallfast $$search, $$replace, inselect;
+		escape;
+		enabledraw;
+		break;
+	} else if (##cc == 0x0c) { //C-l
+		redraw;
+	} else if ($$cc == ".") {
+		replacedown $$search, $$replace;
+		break;
+	} else if ($$cc == ",") {
+		replacedown $$search, $$replace;
+		if (!result) break;
+	} else if ($$cc == "^") {
+		findup;
+	} else if (##cc == 0x12) { //C-r
+		message "not implemented yet";
+	} else if (##cc == 0x17) { //C-w
+		message "not implemented yet";
+	} else if ($$cc == "?") {
+		message "Query replacing "+$$search+" with "+$$replace+".\n\n"+
+"Type Space or `y' to replace one match,\n"+
+"Backspace or `n' to skip to next,\n"+
+"RET or `q' to exit,\n"+
+"Period to replace one match and exit,\n"+
+"Comma to replace but not move point immediately,\n"+
+//"C-r to enter recursive edit (M-C-c to get out again),\n"+
+//"C-w to delete match and recursive edit,\n"+
+"C-l to clear the screen, redisplay, and offer same replacement again,\n"+
+"! to replace all remaining matches with no more questions,\n"+
+"^ to move point back to previous match.";
+	}
+}
+setsearch $$search,0x00;
