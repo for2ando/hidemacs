@@ -1,0 +1,15 @@
+if (readonly || browsemode || code == 0) { beep; endmacroall; }
+begingroupundo;
+while (x > 0) {
+  left;
+  if (!(code == 0x20 || code == 0x09 || unicode == 0x3000)) {
+    right;
+    break;
+  }
+  delete;
+}
+while (code == 0x20 || code == 0x09 || unicode == 0x3000) {
+  delete;
+}
+insert " ";
+endgroupundo;
