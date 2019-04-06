@@ -1,0 +1,13 @@
+#screencentery = screentopy + windowheight / 2;
+#torolldown = #screencentery - y;
+if (#torolldown > 0) {
+  #i=0; while (#i < #torolldown) {
+    rolldown;
+    #i = #i + 1;
+  }
+} else if (#torolldown < 0) {
+  #i=0; while (#i > #torolldown) {
+    rollup;
+    #i = #i - 1;
+  }
+}
