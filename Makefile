@@ -1,3 +1,6 @@
 # Makefile for hidemacs
-install: macro settings
-	$(foreach i,$^,{ cd $dir; make install;})
+install:
+	(cd macro; make install)
+	(cd setting; make)
+
+#	$(foreach dir,$^,(cd $(dir); make install);)
