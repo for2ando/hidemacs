@@ -1,59 +1,121 @@
+//loaddll "HmOutputPane.dll";
+#opt = 0x00000000;
+#bkCompatibleMode = setcompatiblemode(0x00020200);
+// 0x0200=range selection, 0x20000=backup search criterias
+$previous = getregstr("eSearchString");
+#bkLineno = lineno;
+#bkColumn = column;
 #backward = getregnum("eBackwardP");
-#failure = 0;
-#wrapped = 0;
-$$previous = searchbuffer;
-##opt = 0x00;
-setsearch "", ##opt;
-restart:
-while (1) {
-	call settitle;
-	##cc = inputchar($title);
-	if (##cc == 0x0d) break;
-	if (##cc >= 0x20 && ##cc < 0x7f || ##cc == 0x09) {
-		setsearch searchbuffer+char(##cc),##opt;
-		if (#backward) { right; right; findup; }
-		else 		   { left; left; finddown; }
-		#failure = !result;
-	} else if (##cc == 0x13) { //C-s
-		if (searchbuffer == "")
-			if (!#backward) setsearch $$previous,##opt;
-			else { #backward = 0; goto restart; }
-		else if (#failure && (!#backward)) {
-			gofiletop;
-			#wrapped = 1;
-		}
-		//if (#backward) #wrapped = 0;		// non-standard hack
-		#backward = 0;
-		finddown;
-		#failure = !result;
-	} else if (##cc == 0x12) { //C-r
-		if (searchbuffer == "")
-			if (#backward) setsearch $$previous,##opt;
-			else { #backward = 1; goto restart; }
-		else if (#failure && #backward) {
-			gofileend;
-			#wrapped = 1;
-		}
-		//if (!#backward) #wrapped = 0;		// non-standard hack
-		#backward = 1;
-		findup;
-		#failure = !result;
-	} else if (##cc == 0x08) { //C-h, BS
-		// not implemented yet
-	} else {
-		//insert char(##cc);
-		break;
-	}
+#wrapped = false;
+#failure = false;
+setsearch "", #opt;
+#sttop = 0;
+#stCc[#sttop] = 0x00;
+$stSearchbuffer[#sttop] = searchbuffer;
+#stLineno[#sttop] = lineno;
+#stColumn[#sttop] = column;
+#stBackward[#sttop] = #backward;
+#stWrapped[#sttop] = #wrapped;
+#startLineno = lineno;
+#startColumn = column;
+while (true) {
+  call settitle;
+  #cc = inputchar($$return);
+  if (#cc == 0x07) { beep; break; } //C-g
+  if (#cc == 0x0d) { //C-m
+    writeregnum "eMarkY", #stLineno[0];
+    writeregnum "eMarkX", #stColumn[0];
+    break;
+  }
+  #printable = false;
+  if ((#cc >= 0x20 && #cc < 0x7f) || #cc == 0x09) { //printable ch. or C-i
+    if (strlen(searchbuffer) >= 249) {
+      message "The search string has its limit length=249, then unable to add a new char.";
+      continue;
+    }
+    setsearch searchbuffer + char(#cc), #opt;
+    moveto2 #startColumn, #startLineno;
+    if (#backward) {
+      ##i = strlen(searchbuffer)-1; while (##i >= 1) { left; ##i = ##i - 1; }
+      findup2;
+    } else { finddown2; }
+    #failure = !result;
+    hilightfound true;
+    #printable = true;
+  } else if (#cc == 0x13) { //C-s
+    if (searchbuffer == "") {
+      if (#backward) { #backward = false; continue; }
+      setsearch $previous,#opt;
+      if (searchbuffer == "") { beep; continue; }
+    } else if (#failure && (!#backward)) {
+      gofiletop;
+      #wrapped = true;
+    }
+    if (#backward) { 
+      #backward = false;
+      moveto2 column, lineno;
+      finddown2;
+    }
+    else finddown;
+    #failure = !result;
+    hilightfound true;
+  } else if (#cc == 0x12) { //C-r
+    if (searchbuffer == "") {
+      if (!#backward) { #backward = true; continue; }
+      setsearch $previous,#opt;
+      if (searchbuffer == "") { beep; continue; }
+    } else if (#failure && #backward) {
+      gofileend;
+      #wrapped = true;
+    }
+    if (!#backward) { #backward = true; right; }
+    findup;
+    #failure = !result;
+    hilightfound true;
+  } else if (#cc == 0x08) { //C-h, BS
+    if (#sttop <= 0) { beep; continue; }
+    #sttop = #sttop - 1;
+    setsearch $stSearchbuffer[#sttop], #opt;
+    moveto2 #stColumn[#sttop], #stLineno[#sttop];
+    #backward = #stBackward[#sttop];
+    #wrapped = #stWrapped[#sttop];
+    if (#sttop >= 1) finddown2;
+    hilightfound true;
+    continue;
+  } else {
+    //send char(#cc) to hidemaru
+    break;
+  }
+  if (!#printable) {
+    #startLineno = lineno;
+    #startColumn = column;
+  }
+  #sttop = #sttop + 1;
+  #stCc[#sttop] = #cc;
+  $stSearchbuffer[#sttop] = searchbuffer;
+  #stLineno[#sttop] = lineno;
+  #stColumn[#sttop] = column;
+  #stBackward[#sttop] = #backward;
+  #stWrapped[#sttop] = #wrapped;
 }
-endmacro
+//hilightfound false;
+writeregstr "eSearchString", searchbuffer;
+setcompatiblemode(#bkCompatibleMode);
+endmacro;
 
 settitle:
-	$title = "";
-	if (#failure) $title = $title+"Failing ";
-	if (#wrapped)
-		if ($title == "") $title = $title+"Wrapped ";
-		else			  $title = $title+"wrapped ";
-	$title = $title+"I-search";
-	if (#backward) $title = $title+" backward";
-	$title = $title+": "+searchbuffer;
-	return;
+  $$title = "";
+  if (#failure) {
+    $$title = $$title + "Failing ";
+    beep;
+  }
+  if (#wrapped)
+    if ($$title == "") $$title = $$title + "Wrapped ";
+    else        $$title = $$title + "wrapped ";
+  $$title = $$title + "I-search";
+  if (#backward) $$title = $$title + " backward";
+  $$title = $$title + ": " + searchbuffer;
+  return $$title;
+
+dbgout:
+  return dllfunc("Output",hidemaruhandle(0),$$1);
