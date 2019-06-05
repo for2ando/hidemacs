@@ -1,5 +1,5 @@
 openreg "CURRENTUSER", "Software\\Hidemaruo\\Hidemaru\\Env";
 writeregnum "eBackwardP", 0;
-execmacro "C:\\home\\work\\hidemacs\\macro\\eISearchCore.mac";
+execmacro "eISearchCore.mac";
 closereg;
 endmacro;
