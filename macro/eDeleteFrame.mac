@@ -1,0 +1,23 @@
+//loaddll("HmOutputPane.dll");
+if (tabmode == 0) {
+  exit;
+} else {
+  #tab = tabtotal - 1;
+  while (#tab >= 1) {
+    setactivehidemaru gettabhandle(true, 0, #tab);
+    //loaddll("HmOutputPane.dll");
+    //call dbgout, "----\r\ntab=" + str(#tab) + "\r\n";
+    closenew;
+    //loaddll("HmOutputPane.dll");
+    //call dbgout, "--\r\nhandle=" + str(gettabhandle(true, 0, #tab)) + "\r\n";
+    setactivehidemaru gettabhandle(true, 0, 0);
+    closehidemaruforced gettabhandle(true, 0, #tab);
+    #tab = #tab - 1;
+  }
+  setactivehidemaru gettabhandle(true, 0, 0);
+  exit;
+}
+endmacro;
+
+dbgout:
+  return dllfunc("Output",hidemaruhandle(0),$$1);
