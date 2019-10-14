@@ -1,0 +1,533 @@
+//  秀丸エディタで、#include を可能にするマクロ by h-tom
+//  早い話、実行するマクロと、#include で指定されたファイルを
+//  合成して実行している、かなり強引なマクロ。
+//
+//  #inludeの指定はファイルの先頭にコメントとして記述。
+//  ファイル名はフルパスか、マクロフォルダからの相対パスで記述すること。
+//  case1 通常のコメント
+//    //#include  <ファイル名>
+//  case2 複数行コメント
+//    /*
+//    #include  <ファイル名>
+//    */
+//  マクロの先頭に、
+//    execmacro "hme_include.mac", currentmacrofilename ; endmacro;
+//  を追加すること。
+//
+//  マクロに引数を渡すには、
+//    一個の場合
+//      execmacro   "hme_include.mac",currentmacrofilename, str(argcount), getarg(0); endmacro;
+//    複数の場合(例は最大で3個)
+//      execmacro   "hme_include.mac",currentmacrofilename, str(argcount), getarg(0), getarg(1), getarg(2); endmacro;
+//  を追加すること。
+//
+//  マクロファイル名の先頭に"~"を追加したファイルを作成し、実行します。
+//  2007/04/30  Version.1.0.0   ・初版
+//  2007/05/03  Version.1.0.1   ・必要なパラメータが１つになるように変更
+//  2007/05/06                  ・<>の場合はマクロフォルダ、""の場合はマクロのカレントフォルダ
+//                              　のパスを（フルパスでなければ）補完するように変更
+//  2008/04/30  Version.1.0.2   ・実行マクロ生成時、ヒストリに残らないように"/n"オプション追加
+//  2010/03/07  Version.1.1.0   ・Ver.8 専用版
+//  2013/11/10  Version.2.0.0   ・実際に実行するファイルを、秀丸本体で編集していたのを止めで、
+//                              　COM(WSH)によるファイル操作に変更。
+//                              ・処理方法変更に伴い、includeを配置する位置の制限はなくなり、
+//                              　何処に配置してもいい。
+//                              ・合成したファイルの削除を行わずに、再利用するようにした。
+//                              　作成したマクロに、ファイル名を記録し、更新されていなければ、
+//                              　そのファイルを使用する。更新されていれば再度合成する。
+//  2014/11/24  Version.2.1.0   ・マクロの引数に対応。
+//                              　引数を使用する場合は、呼び出し部分を変更する必要があります。
+
+//デバック時は、以下の２行のコメントを外すこと
+//debuginfo 1;
+//#debug = 1;
+
+//変数の初期化
+#run       = 1;         //マクロの実行フラグ
+#file_bom  = 0;         //読み込んだファイルのbomの有無 -2で、UTF-16LE(BOMあり)
+#write_bom = false;     //書込みファイルのUnicode フラグ。
+#make      = 0;         //マクロファイルの合成フラグ
+#argc      = 0;
+
+//呼び出し先のマクロファイル名取得
+if(argcount == 0){
+	message "マクロ名が指定されていません。";
+	endmacro;
+}else{
+	$filename  =  getarg(0);
+	if(argcount > 1){
+//		call DBOUT "引数あり:" + str(argcount);
+		#argc  =  val(getarg(1));
+		#n = 0;
+		while(#n < #argc){
+			#temp = #n + 2;
+			$argv[#n] = getarg(#temp);
+//			call DBOUT str(#temp) + " -- $argv[" + str(#n) + "] = " + $argv[#n];
+			#n = #n + 1;
+		}
+	}
+}
+
+//FSOでマクロファイルを開くのでオブジェクトの生成
+#wshfso = createobject("Scripting.FileSystemObject");
+if(#wshfso == 0){
+	message "Scripting.FileSystemObject作成に失敗";
+	#run = 0;
+	goto macro_end;
+}
+
+//実行するマクロのファイル名を作成
+$macrodir  = callmethod_returnstr(#wshfso, "GetParentFolderName", $filename);
+$macrofile = $macrodir + "\\~" + callmethod_returnstr(#wshfso, "GetFileName", $filename);
+//正規表現処理用にDLLをロード
+#hmjre = loaddll(hidemarudir + "\\hmjre.dll");
+if(#hmjre == 0 ){
+	message "DLLファイルの読み込みに失敗。";
+	#run = 0;
+	goto macro_end;
+}else{
+	//DLLのUnicode文字対応機能を有効化(マクロはUTF-16LEでもいいので)
+	#n = dllfunc(#hmjre, "SetUnicodeIndexAutoConvert", 1);
+}
+//ファイルが既に存在している場合
+if(existfile($macrofile)){
+	#make = 0;
+	#cnt  = 0;
+	//実行するマクロファイルの更新日時を取得
+	call GetLastModified #wshfso, $macrofile;
+	$makedate = $$return;
+	//実行するマクロファイルに埋め込まれているデータを読み込み
+	call GetFileList #wshfso, $macrofile;
+	while(1){
+		if($file[#cnt] == "") break;
+		//更新日時を取得
+		call GetLastModified #wshfso, $file[#cnt];
+		$nowdate = $$return;
+		if($nowdate == ""){
+			#make = 1;
+			break;
+		}else{
+			//日時を比較
+			call CheckDate $nowdate, $makedate;
+			if(##return){
+				//構成ファイル側の日付が新しい場合は、再度合成する
+				#make = 1;
+				break;
+			}
+		}
+		#cnt = #cnt + 1;
+	}
+	//ループカウンタが"0"で抜けた場合は、最初のデータ取得に失敗しているので、再合成へ
+	if(#cnt == 0) #make = 1;
+}else{
+	#make = 1;
+}
+//call DBOUT "#make:" + str(#make);
+//再合成を行わない場合は、"macro_end"へジャンプ
+if(#make == 0) goto macro_end;
+
+//メインのマクロファイル読み込み
+call GetMainMacro #wshfso, $filename;
+$MainMacro = $$return;
+if($MainMacro == ""){
+	message "ファイルの読み込みに失敗。";
+	#run = 0;
+	goto macro_end;
+}
+//読み込んだファイルがUTF-16LEなら、書込みをUTF-16LEにする。
+if(#file_bom != 0) #write_bom = true;
+
+////マクロ呼び出し部を削除
+#pos = dllfunc(#hmjre, 
+               "FindRegular",
+               "(?<!//)([ \\t]*)(execmacro +[^;]+hme_include\\.mac\" *, *currentmacrofilename *)(, *.+)*; *endmacro *;",
+               $MainMacro,
+               0);
+if(#pos == -1){
+	//見つからない場合はエラーにする。
+	message "execmacro \"～\\" + currentmacrobasename +"文が見つかりません。";
+	#run = 0;
+	goto macro_end;
+}else{
+	//マクロ呼び出し部削除
+	$MainMacro = dllfuncstr(#hmjre,
+	                        "ReplaceRegular",
+                            "(?<!//)([ \\t]*)(execmacro +[^;]+hme_include\\.mac\" *, *currentmacrofilename *)(, *.+)*; *endmacro *;",
+                            $MainMacro,
+                            #pos,
+                            "",
+                            0);
+}
+
+#include_cnt  = 0;
+call GetIncludeList $MainMacro;
+//call DBOUT "#includeの数:" + str(#include_cnt);
+//埋め込みデータを作成
+$file_data = "/*\r\n" + currentmacrobasename + ":" + str(#include_cnt + 1) + "\r\n" + $filename + "\r\n";
+
+//#includeがあれば、ファイルの最後に追加
+if(#include_cnt > 0){
+	#i = 0;
+	//最後に移動し、念のため、endmcaroを追加しておく。
+	$MainMacro = $MainMacro + "\r\nendmacro;\r\n";
+	while(#i < #include_cnt){
+//		call DBOUT "$includefile:" + $includefile[#i];
+		//ファイルが存在していれば、最後に読み込む
+		if(existfile($includefile[#i])){
+			$MainMacro = $MainMacro + "// include --> " + $includefile[#i] + "\r\n";
+			call GetMainMacro #wshfso, $includefile[#i];
+			$IncludeMacro = $$return;
+			if($IncludeMacro == ""){
+				message "#include で 指定されたファイル\n「" + $includefile[#i] + "」\nの読み込みに失敗しました。";
+				#run = 0;
+				goto macro_end;
+			}
+			if(#file_bom != 0) #write_bom = true;
+			$MainMacro = $MainMacro + $IncludeMacro + "\r\n";
+			$file_data = $file_data + $includefile[#i] + "\r\n";
+		}else{
+		//ファイルがなければエラー
+//			call DBOUT "ファイルなし：" + $includefile[#i];
+			message "#include で 指定されたファイル\n「" + $includefile[#i] + "」\nが見つかりません。";
+			#run = 0;
+			goto macro_end;
+		}
+		#i = #i + 1;
+	}
+}
+
+//マクロファイル作成
+#fs  = callmethod_returnobj(#wshfso, "CreateTextFile", $macrofile, true, #write_bom);
+if(#fs == 0){
+	message $macrofile + "の作成に失敗しました。";
+	#run = 0;
+}else{
+	callmethod #fs, "Write", $file_data + "*/\r\n" + $MainMacro;
+	callmethod #fs, "Close";
+}
+
+macro_end:
+//いろいろ解放
+if(#hmjre != 0) freedll #hmjre;
+releaseobject #wshfso;
+
+//call DBOUT "#run:" + str(#run);
+//マクロを実行
+if(#run){
+//	call DBOUT "execmacro " + $macrofile;
+	if(#argc == 0){
+		execmacro $macrofile;
+	}else if(#argc == 1){
+		execmacro $macrofile, $argv[0];
+	}else if(#argc == 2){
+		execmacro $macrofile, $argv[0],$argv[1];
+	}else if(#argc == 3){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2];
+	}else if(#argc == 4){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3];
+	}else if(#argc == 5){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4];
+	}else if(#argc == 6){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5];
+	}else if(#argc == 7){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6];
+	}else if(#argc == 8){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7];
+	}else if(#argc == 9){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8];
+	}else if(#argc == 10){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9];
+	}else if(#argc == 11){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10];
+	}else if(#argc == 12){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11];
+	}else if(#argc == 13){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12];
+	}else if(#argc == 14){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13];
+	}else if(#argc == 15){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14];
+	}else if(#argc == 16){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15];
+	}else if(#argc == 17){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16];
+	}else if(#argc == 18){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17];
+	}else if(#argc == 19){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18];
+	}else if(#argc == 20){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18],$argv[19];
+	}else if(#argc == 21){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18],$argv[19],$argv[20];
+	}else if(#argc == 22){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18],$argv[19],$argv[20],
+		                      $argv[21];
+	}else if(#argc == 23){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18],$argv[19],$argv[20],
+		                      $argv[21],$argv[22];
+	}else if(#argc == 24){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18],$argv[19],$argv[20],
+		                      $argv[21],$argv[22],$argv[23];
+	}else if(#argc == 25){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18],$argv[19],$argv[20],
+		                      $argv[21],$argv[22],$argv[23],$argv[24];
+	}else if(#argc == 26){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18],$argv[19],$argv[20],
+		                      $argv[21],$argv[22],$argv[23],$argv[24],$argv[25];
+	}else if(#argc == 27){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18],$argv[19],$argv[20],
+		                      $argv[21],$argv[22],$argv[23],$argv[24],$argv[25],$argv[26];
+	}else if(#argc == 28){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18],$argv[19],$argv[20],
+		                      $argv[21],$argv[22],$argv[23],$argv[24],$argv[25],$argv[26],$argv[27];
+	}else if(#argc == 29){
+		execmacro $macrofile, $argv[0],$argv[1],$argv[2],$argv[3],$argv[4],$argv[5],$argv[6],$argv[7],$argv[8],$argv[9],$argv[10],
+		                      $argv[11],$argv[12],$argv[13],$argv[14],$argv[15],$argv[16],$argv[17],$argv[18],$argv[19],$argv[20],
+		                      $argv[21],$argv[22],$argv[23],$argv[24],$argv[25],$argv[26],$argv[27],$argv[28];
+	}
+}
+
+endmacro;
+
+//----------------------//
+//  デバック出力ルーチン
+//  デバックツールは「DBCon」等を使用する事
+//「http://www.htosh.com/」
+//----------------------//
+DBOUT:
+	if(#debug == 1 && findwindowclass("DBConClass") != 0) debuginfo $$1 + "\n";
+return;
+
+//マクロファイルの読み込み
+//引数
+//   ##1：FileSystemObject
+//   $$2：読み込むファイル名
+//戻り値：読み込んだ内容を返す。
+//以下のグローバル変数の内容を変更する。
+//・$nowdate ：読み込んだファイルの更新日時を示す文字列
+//・#file_bom：読み込んだファイルが、UTF-16LEなら-2、SHIFT_JISなら0
+GetMainMacro:
+	if(!existfile($$2)){
+//		call DBOUT "ファイルが見つかりません。\n" + $$2;
+		return "";
+	}
+
+	##f   = callmethod_returnobj(##1, "GetFile", $$2);
+	if(!getresultex(10)){
+		message "ファイルオブジェクトの取得に失敗\n" + $$2 + "*" + str(##1);
+//		call DBOUT "ファイルオブジェクトの取得に失敗\n" + $$2 + "-->" + str(##1) + "-->" + str(##f);
+		return "";
+	}
+	call GetLastModified ##1, $$2, ##f;
+	$nowdate = $$return;
+//	call DBOUT "file:" + $$2 + " --> " + $$filedate + " --> " + $nowdate;
+	call CheckFileEncode ##1, $$2;
+	#file_bom = ##return;
+	if(#file_bom == -9999) return "";
+	##fs = callmethod_returnobj(##f,"OpenAsTextStream", 1, #file_bom);
+	if(!getresultex(10)){
+		message "TextStreamの取得に失敗";
+		return "";
+	}
+	$$text = callmethod_returnstr(##fs, "ReadAll");
+	callmethod ##fs, "Close";
+	releaseobject ##fs;
+	releaseobject ##f;
+return $$text;
+
+//ファイルの更新日時を示す文字列を取得する。
+//引数
+//   ##1：FileSystemObject
+//   $$2：調べるファイル名
+//   ##3：fileオブジェクト(省略可能)
+//戻り値：ファイルの更新日時を示す文字列。ファイルがない場合は""を返す
+GetLastModified:
+	$$nowdate = "";
+	##objfile = ##3;
+	if(!existfile($$2)) return "";
+	if(##objfile == 0) ##objfile  = callmethod_returnobj(##1, "GetFile", $$2);
+	$$filedate = getpropstr(##objfile, "DateLastModified");
+	$$nowdate = dllfuncstr(#hmjre, "ReplaceRegular", "[^\\d]", $$filedate, 0, "", 2);
+	// 1970年(unix)をしきい値として、1900年台と2000年台を分ける
+	if(val(leftstr($$nowdate, 2)) >= 70){
+		$$nowdate = "19" + $$nowdate;
+	}else{
+		$$nowdate = "20" + $$nowdate;
+	}
+//	call DBOUT "file:" + $$2 + "\n --> " + $$filedate + " --> " + $$nowdate;
+return $$nowdate;
+
+//マクロ内の include の記述を検索し、配列に格納
+//引数
+//   $$1：チェックする内容
+//以下のグローバル変数の内容を変更する。
+//・$includefile[n]：ファイルパスを格納する配列
+//・#include_cnt   ：配列の数
+GetIncludeList:
+	##spos = 0;
+	//#include するファイルの取り込み
+	while(1){
+		//#include <～>を検索
+	//	call DBOUT "#spos=" + str(#spos);
+		##pos = dllfunc(#hmjre, "FindRegular",
+		                       "\n?[\\t ]*(//)?[\\t ]*#include[ \\t]*([<\"])(.+)[\">][ \\t]*",
+		                       $$1,
+		                       ##spos);
+
+	//	call DBOUT "##pos=" + str(#p#os);
+		if(##pos == -1) break;
+		##spos = ##pos + dllfunc(#hmjre, "GetLastMatchLength");
+		//見つけたファイル名を取り込み
+		##tagpos = dllfunc(#hmjre, "GetLastMatchTagPosition", 3);
+		##taglen = dllfunc(#hmjre, "GetLastMatchTagLength",   3);
+		$$include = midstr($$1, ##tagpos, ##taglen);
+		//include ファイル名を囲む最初の文字を取得
+		##tagpos = dllfunc(#hmjre, "GetLastMatchTagPosition", 2);
+		##taglen = dllfunc(#hmjre, "GetLastMatchTagLength",   2);
+		$$include_chk = midstr($$1, ##tagpos, ##taglen);
+	//	call DBOUT "$include_chk=#" + $include_chk + "#";
+		if(strlen($$include) != 0){
+			$$include = tolower($$include);
+			//フルパスでなければ、フォルダを追加する
+			if(midstr($$include, 1,1) != ":" && leftstr($$include, 2) != "\\\\"){
+				if($$include_chk == "<"){
+	//				call DBOUT "macrodir追加";
+					$$include = macrodir + "\\" + $$include;
+				}else{
+	//				call DBOUT "$macrodir追加";
+					$$include = $macrodir + "\\" + $$include;
+				}
+			}
+			##loop = 0;
+			while(##loop < #include_cnt){
+				if($$include == $includefile[##loop]){
+					$$include = "";
+					break;
+				}
+				##loop = ##loop + 1;
+			}
+	//		call DBOUT "$include :" + $include;
+			if(strlen($$include) != 0){
+				$includefile[#include_cnt] = $$include;
+				#include_cnt = #include_cnt + 1;
+			}
+		}
+	}
+return;
+
+//日付文字列の比較、$$1が新しければ、1を返す。
+//   $$1：更新日時を示す文字
+//   $$2：更新日時を示す文字
+//戻り値：$$1が新しければ1、$$2が新しければ0 を返す。
+//        入力文字列が不正の場合は、-1を返す。
+CheckDate:
+//	call DBOUT "now:" + $$1 + " data:" + $$2;
+	if(strlen($$1) != 14) return -1;
+	if(strlen($$2) != 14) return -1;
+	$$yyyymmdd1 = leftstr($$1, 8);
+	$$yyyymmdd2 = leftstr($$2, 8);
+	$$hhmmss1 = rightstr($$1, 6);
+	$$hhmmss2 = rightstr($$2, 6);
+	##ret = 0;
+	if(val($$yyyymmdd1) > val($$yyyymmdd2)){
+		##ret = 1;
+	}else if($$yyyymmdd1 == $$yyyymmdd2){
+		if(val($$hhmmss1) > val($$hhmmss2)){
+			##ret = 1;
+		}
+	}
+//	call DBOUT "#ret:" + str(##ret);
+return ##ret;
+
+
+//ファイルのBOMをチェックし、OpenAsTextStream で必要なモードを返す
+//   ##1：FileSystemObject
+//   $$2：チェックするファイル
+//戻り値：UTF-16LEなら-1、Shift_JISなら0を返す。
+CheckFileEncode:
+	##mode = -9999;
+	if(!existfile($$2)) return ##mode;
+	##fs = callmethod_returnobj(##1, "OpenTextFile", $$2, 1, 0, 0);
+	if(!getresultex(10)) return ##mode;
+	$$bom = callmethod_returnstr(##fs, "Read", 3);
+	callmethod ##fs, "Close";
+	$$bom2 = hex(ascii(midstr($$bom, 0,1))) + hex(ascii(midstr($$bom, 1, 1)));
+	if($$bom2 == "FFFE"){
+		##mode = -1;
+	}else if($$bom2 == "FEFF"){
+	}else if(($$bom2 + hex(ascii(midstr($$bom, 2, 1)))) == "EFBBBF"){
+	}else{
+		##mode = 0;
+	}
+return ##mode;
+
+//ファイルの先頭に書き込まれたリストを取得する。
+//   ##1：FileSystemObject
+//   $$2：チェックするファイル
+//以下のグローバル変数の内容を変更する。
+//・$file[n] ：ファイルパスを格納する配列
+//・#file_cnt：配列の数
+GetFileList:
+	if(!existfile($$2)){
+//		call DBOUT "ファイルが見つかりません。\n" + $$2;
+		return;
+	}
+	call CheckFileEncode ##1, $$2;
+	##mode = ##return;
+	if(##mode == -9999) return;
+	##fs = callmethod_returnobj(##1, "OpenTextFile", $$2, 1, 0, ##mode);
+	if(!getresultex(10)){
+		message "TextStreamの取得に失敗(1)";
+		return ;
+	}
+	if(getpropnum(##fs, "AtEndOfStream") == 1){
+		callmethod ##fs, "Close";
+		return;
+	}
+	//line1：複数コメントの先頭がいるはず。
+	$$line = callmethod_returnstr(##fs, "ReadLine");
+	if($$line != "/*"){
+		callmethod ##fs, "Close";
+		return;
+	}
+	if(getpropnum(##fs, "AtEndOfStream") == 1){
+		callmethod ##fs, "Close";
+		return;
+	}
+	//line2：識別用文字列とファイル数がいるはず。
+	##line = 0;
+	$$line = callmethod_returnstr(##fs, "ReadLine");
+	if(strstr($$line, currentmacrobasename + ":") == 0){
+		##line = val(rightstr($$line, strlen($$line) - strlen(currentmacrobasename + ":")));
+	}
+//	call DBOUT "##line:" + str(##line);
+	if(##line > 0){
+		#file_cnt = 0;
+		while(#file_cnt < ##line){
+			$$line = callmethod_returnstr(##fs, "ReadLine");
+//			call DBOUT "$$line:" + $$line;
+			if($$line == "*/") break;
+			$file[#file_cnt] = $$line;
+			if(getpropnum(##fs, "AtEndOfStream") == 1) break;
+			#file_cnt = #file_cnt + 1;
+		}
+	}
+	callmethod ##fs, "Close";
+return;

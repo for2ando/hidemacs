@@ -1,0 +1,26 @@
+//#include <outputFrame.mac>
+execmacro "hme_include.mac", currentmacrofilename; endmacro;
+
+//call dbgoutln, "--------" + time;
+#savedcury = y;
+#savedcurx = x;
+#savedselecting = selecting;
+if (#savedselecting == false) {
+  golinetop;
+  beginsel;
+  golineend;
+  //endsel;
+}
+$macro = "runex \"cmd /c bash -c 'get-android-app-name -p -q -'\", 1, 5, \"\", 8, \"\", 8, \"\", 0, \"\", 0, 1, 6, 0x0001;";
+//call dbgoutvar "$macro";
+eval $macro;
+#result = result;
+#runexresult = getresultex(9);
+//call dbgoutln, "";
+//call dbgoutvar "#result";
+//call dbgoutvar "#runexresult";
+if (#savedselecting == false) {
+  escape;
+  moveto #savedcurx, #savedcury;
+}
+endmacro;

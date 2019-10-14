@@ -1,0 +1,20 @@
+loaddll "HmOutputPane.dll";
+endmacro;
+
+dbgout:
+  return dllfunc("Output", hidemaruhandle(0), $$1);
+
+dbgoutln:
+  return dllfunc("Output", hidemaruhandle(0), $$1 + "\r\n");
+
+dbgoutvar:
+  $$firstchar = leftstr($$1, 1);
+  if ($$firstchar == "#") {
+    $$varrefstr = "str(" + $$1 + ")";
+  } else {
+    $$varrefstr = $$1;
+  }
+  $$macro = "$$text = $$1 + \"=[\" + " + $$varrefstr + " + \"]\";";
+  eval $$macro;
+  call dbgoutln $$text;
+  return ##return;
