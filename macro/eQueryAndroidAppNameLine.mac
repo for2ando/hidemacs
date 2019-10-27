@@ -1,5 +1,5 @@
 //#include <outputFrame.mac>
-execmacro "hme_include.mac", currentmacrofilename; endmacro;
+//execmacro "hme_include.mac", currentmacrofilename; endmacro;
 
 //call dbgoutln, "--------" + time;
 #savedcury = y;
