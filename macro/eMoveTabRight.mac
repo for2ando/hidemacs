@@ -1,0 +1,5 @@
+if (tabmode == 0) { beep; endmacro; }
+#newtaborder = taborder - 1;
+if (#newtaborder < 0) #newtaborder = tabtotal - 1;
+settaborder 0, #newtaborder;
+endmacro;
