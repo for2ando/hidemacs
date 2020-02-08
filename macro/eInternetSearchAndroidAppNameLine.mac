@@ -1,0 +1,27 @@
+//#include <outputFrame.mac>
+//execmacro "hme_include.mac", currentmacrofilename; endmacro;
+
+//call dbgoutln, "--------" + time;
+#savedcury = y;
+#savedcurx = x;
+#savedselecting = selecting;
+if (#savedselecting == false) {
+  golinetop;
+  beginsel;
+  golineend;
+  //endsel;
+}
+$text = gettext(seltopx, seltopy, selendx, selendy,1);
+$macro = "runex \"cmd /c start https://google.com/?q=" + $text + "\", 0, 0, \"\", 8, \"\", 8, \"\", 0, \"\", 0, 0, 6, 0x0001;";
+//call dbgoutvar "$macro";
+eval $macro;
+#result = result;
+#runexresult = getresultex(9);
+//call dbgoutln, "";
+//call dbgoutvar "#result";
+//call dbgoutvar "#runexresult";
+if (#savedselecting == false) {
+  escape;
+  moveto #savedcurx, #savedcury;
+}
+endmacro;
