@@ -20,7 +20,9 @@ $stSearchbuffer[#sttop] = searchbuffer;
 #startColumn = column;
 while (true) {
   call settitle;
-  #cc = inputchar($$return);
+  //#cc = inputchar($$return);
+  call pollingchar($$return);
+  #cc = ##return;
   if (#cc == 0x07) { beep; break; } //C-g
   if (#cc == 0x0d) { //C-m
     writeregnum "eMarkY", #stLineno[0];
@@ -116,6 +118,19 @@ settitle:
   if (#backward) $$title = $$title + " backward";
   $$title = $$title + ": " + searchbuffer;
   return $$title;
+
+pollingchar:
+  title $$1;
+  disablebreak;
+  ##cc = 0;
+  while (true) {
+    ##cc = keypressed;
+    if (##cc != 0) break;
+    //sleep 10;
+  }
+  enablebreak;
+  ##cc = inputchar($$1);
+  return ##cc;
 
 dbgout:
   return dllfunc("Output",hidemaruhandle(0),$$1);
